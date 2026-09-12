@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Subdomain Enumerator</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔍</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Subdomain Enumerator</h1>
+        <p class="subtitle">Passive (crt.sh) + active (DNS brute-force) subdomain discovery</p>
+
+        <form id="scan-form" action="/scan" method="POST">
+            <input
+                type="text"
+                name="domain"
+                placeholder="example.com"
+                value="{{ domain or '' }}"
+                required
+            >
+            <label class="checkbox-label">
+                <input type="checkbox" name="passive_only" {% if passive_only %}checked{% endif %}>
+                Passive only (faster, skips DNS brute-force)
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="include_apex" {% if include_apex %}checked{% endif %}>
+                Include bare domain (e.g. example.com) in results
+            </label>
+            <button type="submit" id="scan-button">Scan</button>
+        </form>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p id="loading-text">Querying certificate transparency logs&hellip;</p>
+        </div>
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        {% if results is not none %}
+            <div class="results-header">
+                <div>
+                    <h2>Results for {{ domain }}</h2>
+                    <p class="mode-note">
+                        Mode: {{ "Passive only (crt.sh)" if passive_only else "Passive + active (crt.sh + DNS brute-force)" }}
+                    </p>
+                </div>
+                <div class="stats">
+                    <span class="stat-badge">{{ results|length }} found</span>
+                    {% if elapsed is not none %}
+                        <span class="stat-badge stat-time">{{ elapsed }}s</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if results %}
+                <div class="results-actions">
+                    <button type="button" id="copy-all" class="secondary-button">Copy all</button>
+                    <button type="button" id="download-all" class="secondary-button">Download .txt</button>
+                </div>
+                <ul class="results" id="results-list">
+                    {% for subdomain in results %}
+                        <li>
+                            <span class="subdomain-text">{{ subdomain }}</span>
+                            <button type="button" class="copy-one" data-value="{{ subdomain }}" title="Copy">Copy</button>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No live subdomains found.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <script>
+        // ---- Loading state on submit ----
+        // A plain Flask form POST is a full-page reload with zero
+        // built-in progress indicator — without this, the page just
+        // looks frozen for the several seconds a scan can take.
+        const form = document.getElementById('scan-form');
+        const button = document.getElementById('scan-button');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loading-text');
+
+        const messages = [
+            'Querying certificate transparency logs\u2026',
+            'Brute-forcing common subdomains\u2026',
+            'Resolving candidates via DNS\u2026',
+            'Almost done\u2026'
+        ];
+
+        form.addEventListener('submit', () => {
+            button.disabled = true;
+            button.textContent = 'Scanning\u2026';
+            loading.classList.remove('hidden');
+
+            let i = 0;
+            setInterval(() => {
+                i = (i + 1) % messages.length;
+                loadingText.textContent = messages[i];
+            }, 1800);
+        });
+
+        // ---- Copy / download actions (only exist when results are shown) ----
+        const copyAllBtn = document.getElementById('copy-all');
+        const downloadBtn = document.getElementById('download-all');
+        const resultsList = document.getElementById('results-list');
+
+        function getAllSubdomains() {
+            return Array.from(resultsList.querySelectorAll('.subdomain-text'))
+                .map(el => el.textContent);
+        }
+
+        if (copyAllBtn) {
+            copyAllBtn.addEventListener('click', () => {
+                const text = getAllSubdomains().join('\n');
+                navigator.clipboard.writeText(text).then(() => {
+                    copyAllBtn.textContent = 'Copied!';
+                    setTimeout(() => { copyAllBtn.textContent = 'Copy all'; }, 1500);
+                });
+            });
+        }
+
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => {
+                const text = getAllSubdomains().join('\n');
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '{{ domain }}-subdomains.txt';
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        // Per-row copy buttons
+        document.querySelectorAll('.copy-one').forEach(btn => {
+            btn.addEventListener('click', () => {
+                navigator.clipboard.writeText(btn.dataset.value).then(() => {
+                    const original = btn.textContent;
+                    btn.textContent = 'Copied';
+                    setTimeout(() => { btn.textContent = original; }, 1200);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+
+# Project-specific output (scan results shouldn't be committed)
+results/
+*.results.txt
+
+# Flask
+instance/
+.flaskenv
